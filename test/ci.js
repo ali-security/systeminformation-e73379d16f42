@@ -1,5 +1,7 @@
 const si = require('../lib/index');
 
+let testsPassed = 0;
+
 const testWithTimeout = async (fn) => {
   return new Promise((resolve, reject) => {
     (async () => {
@@ -8,6 +10,8 @@ const testWithTimeout = async (fn) => {
       }, 240000);
       const result = await fn();
       clearTimeout(timeout);
+      testsPassed++;
+      console.log(`ok ${testsPassed} - ${fn.name}`);
       return resolve(result);
     })();
   });
@@ -114,6 +118,7 @@ const testWithTimeout = async (fn) => {
     console.log('----------------------------------------\n');
 
     console.log('All tests complete.');
+    console.log(`Tests passed: ${testsPassed}, failed: 0`);
     console.log('----------------------------------------');
     console.log(`Time to complete: ${(Date.now() - startTotalTime) * 0.001} s`);
     console.log('----------------------------------------\n');
@@ -121,6 +126,7 @@ const testWithTimeout = async (fn) => {
   } catch (e) {
     console.log(e);
     console.log('One or more tests failed.');
+    console.log(`Tests passed: ${testsPassed}, failed: 1`);
     process.exit(1);
   }
 })();

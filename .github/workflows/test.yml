@@ -2,16 +2,16 @@
 name: Test
 
 on: [
-  pull_request,
-  push
+  workflow_dispatch
 ]
 
 jobs:
   build:
+    timeout-minutes: 40
     strategy:
       matrix:
         os: [ubuntu-latest]
-        node-version: [16.x, 17.x, 18.x, 19.x, 20.x]
+        node-version: [24.x, 16.x, 17.x, 18.x, 19.x, 20.x]
         include:
           - os: macos-latest
             node-version: 16.x
@@ -35,3 +35,14 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: npm install
       - run: node test/ci.js
+      - name: Pack
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
+        run: |
+          npm i -g npm@11.13.0
+          npm pack
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '24.x'
+        with:
+          name: systeminformation-tgz
+          path: systeminformation-*.tgz
+          if-no-files-found: error
