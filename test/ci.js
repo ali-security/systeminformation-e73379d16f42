@@ -1,3 +1,6 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const si = require('../lib/index');
 
 let testsPassed = 0;
@@ -86,6 +89,48 @@ const testWithTimeout = async (fn) => {
     console.log('----------------------------------------');
     console.log(`Time to complete: ${(Date.now() - startTime) * 0.001} s`); startTime = Date.now();
     console.log('----------------------------------------\n');
+
+    if (process.platform === 'linux') {
+      // interface name must not escape /sys/class/net (../ + symlinks -> file disclosure)
+      console.log('Testing networkStats path traversal:');
+      const traversalSecret = 'si-path-traversal-secret';
+      const traversalDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'si-'));
+      const traversalStatNames = ['rx_bytes', 'tx_bytes', 'rx_dropped', 'rx_errors', 'tx_dropped', 'tx_errors'];
+      fs.writeFileSync(path.join(traversalDir, 'secret'), traversalSecret + '\n');
+      fs.symlinkSync(path.join(traversalDir, 'secret'), path.join(traversalDir, 'operstate'));
+      fs.mkdirSync(path.join(traversalDir, 'statistics'));
+      traversalStatNames.forEach((name) => {
+        fs.writeFileSync(path.join(traversalDir, 'statistics', name), '0\n');
+      });
+      const networkStatsPathTraversal = async () => {
+        const traversalStats = [];
+        for (const iface of ['../../..' + traversalDir, '..', '.']) {
+          traversalStats.push((await si.networkStats(iface))[0]);
+        }
+        return traversalStats;
+      };
+      let traversalStats;
+      try {
+        traversalStats = await testWithTimeout(networkStatsPathTraversal);
+      } finally {
+        traversalStatNames.forEach((name) => {
+          fs.unlinkSync(path.join(traversalDir, 'statistics', name));
+        });
+        fs.rmdirSync(path.join(traversalDir, 'statistics'));
+        fs.unlinkSync(path.join(traversalDir, 'operstate'));
+        fs.unlinkSync(path.join(traversalDir, 'secret'));
+        fs.rmdirSync(traversalDir);
+      }
+      console.log(traversalStats);
+      traversalStats.forEach((stats) => {
+        if (!stats || stats.operstate !== 'unknown' || stats.rx_bytes !== 0 || stats.tx_bytes !== 0) {
+          throw new Error('networkStats() read outside /sys/class/net for iface: ' + (stats && stats.iface));
+        }
+      });
+      console.log('----------------------------------------');
+      console.log(`Time to complete: ${(Date.now() - startTime) * 0.001} s`); startTime = Date.now();
+      console.log('----------------------------------------\n');
+    }
 
     console.log('Testing time:');
     console.log(await testWithTimeout(si.time));
