@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const si = require('../lib/index');
+const util = require('../lib/util');
 
 let testsPassed = 0;
 
@@ -127,6 +128,50 @@ const testWithTimeout = async (fn) => {
           throw new Error('networkStats() read outside /sys/class/net for iface: ' + (stats && stats.iface));
         }
       });
+      console.log('----------------------------------------');
+      console.log(`Time to complete: ${(Date.now() - startTime) * 0.001} s`); startTime = Date.now();
+      console.log('----------------------------------------\n');
+    }
+
+    // unicode quotes (U+2018-U+201E) and dashes (U+2013-U+2015) are treated as ' " - by PowerShell
+    console.log('Testing sanitizeShellString unicode quotes and dashes:');
+    const sanitizeUnicodeQuotes = async () => {
+      return util.sanitizeShellString('a-b‘c’d‚e‛f“g”h„i–j—k―l');
+    };
+    const unicodeSanitized = await testWithTimeout(sanitizeUnicodeQuotes);
+    console.log(unicodeSanitized);
+    if (unicodeSanitized !== 'a-bcdefghijkl') {
+      throw new Error('sanitizeShellString() kept unicode quotes or dashes: ' + unicodeSanitized);
+    }
+    console.log('----------------------------------------');
+    console.log(`Time to complete: ${(Date.now() - startTime) * 0.001} s`); startTime = Date.now();
+    console.log('----------------------------------------\n');
+
+    if (process.platform === 'win32') {
+      // service name must not break out of the PowerShell -Filter string (unicode quote + subexpression)
+      console.log('Testing services PowerShell injection:');
+      const injectionMarkerName = 'si-services-injection-marker';
+      const injectionMarker = path.join(process.cwd(), injectionMarkerName);
+      if (fs.existsSync(injectionMarker)) {
+        fs.unlinkSync(injectionMarker);
+      }
+      const servicesPowerShellInjection = async () => {
+        return si.services('si-test” (new-item -itemtype file -path ' + injectionMarkerName + ' -force) ”');
+      };
+      let injectionServices;
+      let injected = false;
+      try {
+        injectionServices = await testWithTimeout(servicesPowerShellInjection);
+      } finally {
+        injected = fs.existsSync(injectionMarker);
+        if (injected) {
+          fs.unlinkSync(injectionMarker);
+        }
+      }
+      console.log(injectionServices);
+      if (injected) {
+        throw new Error('services() executed injected PowerShell command');
+      }
       console.log('----------------------------------------');
       console.log(`Time to complete: ${(Date.now() - startTime) * 0.001} s`); startTime = Date.now();
       console.log('----------------------------------------\n');
